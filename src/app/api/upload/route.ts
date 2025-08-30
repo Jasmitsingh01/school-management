@@ -14,19 +14,17 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // Generate unique filename
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const filename = `${uniqueSuffix}-${file.name.replace(/\s+/g, '-')}`;
 
-    // Upload to Vercel Blob
     const blob = await put(`schoolImages/${filename}`, file, {
       access: 'public',
-      addRandomSuffix: false, // We're already adding our own suffix
+      addRandomSuffix: false, 
     });
 
     const response: UploadResponse = {
       message: 'File uploaded successfully',
-      filePath: blob.url, // This is the public URL
+      filePath: blob.url,
       success: true
     };
     

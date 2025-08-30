@@ -55,8 +55,9 @@ export async function GET(request: Request): Promise<NextResponse> {
     const offset = (page - 1) * limit;
     
     const schools = await executeQuery({
-      query: `SELECT id, name, address, city, state, image FROM schools ORDER BY name ASC LIMIT ${limit} OFFSET ${offset}`
+      query: `SELECT id, name, address, city, state, contact, email_id, image FROM schools ORDER BY name ASC LIMIT ${limit} OFFSET ${offset}`
     }) as School[];
+    
     
     const totalCountResult = await executeQuery({
       query: 'SELECT COUNT(*) as total FROM schools'
