@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
-import { mkdir } from 'fs/promises';
+import { put } from '@vercel/blob';
 import { UploadResponse } from '@/types';
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -16,27 +14,19 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    const uploadDir = join(process.cwd(), 'public', 'schoolImages');
-    try {
-      await mkdir(uploadDir, { recursive: true });
-    } catch (error: unknown) {
-      if (error instanceof Error && (error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw error;
-      }
-    }
-
+    // Generate unique filename
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const filename = `${uniqueSuffix}-${file.name.replace(/\s+/g, '-')}`;
-    const filePath = join(uploadDir, filename);
 
-    await writeFile(filePath, buffer);
+    // Upload to Vercel Blob
+    const blob = await put(`schoolImages/${filename}`, file, {
+      access: 'public',
+      addRandomSuffix: false, // We're already adding our own suffix
+    });
 
     const response: UploadResponse = {
       message: 'File uploaded successfully',
-      filePath: `/schoolImages/${filename}`,
+      filePath: blob.url, // This is the public URL
       success: true
     };
     
