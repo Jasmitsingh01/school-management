@@ -4,6 +4,7 @@ import { useState, ChangeEvent, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { School } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SchoolsClientProps {
   initialSchools: School[];
@@ -38,6 +39,12 @@ export default function SchoolsClient({
   initialCities, 
   initialError 
 }: SchoolsClientProps) {
+  const { user } = useAuth();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   const [schools, setSchools] = useState<School[]>(initialSchools);
   const [cities, setCities] = useState<string[]>(initialCities);
   const [error, setError] = useState<string | null>(initialError);
@@ -72,9 +79,10 @@ export default function SchoolsClient({
   const [editImageUploaded, setEditImageUploaded] = useState<boolean>(false);
   const [editUploadedImagePath, setEditUploadedImagePath] = useState<string>('');
   const [imageUploadProgress, setImageUploadProgress] = useState<number>(0);
-  console.log(editImageFile)
   const loadingRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+  const [showUnauthorizedPopup, setShowUnauthorizedPopup] = useState<boolean>(false);
+  const [unauthorizedType, setUnauthorizedType] = useState<'not_logged_in' | 'not_owner'>('not_logged_in');
 
   const refreshData = async (showLoader = true): Promise<void> => {
     try {
@@ -190,14 +198,12 @@ export default function SchoolsClient({
         if (xhr.status === 200 || xhr.status === 201) {
           try {
             const result = JSON.parse(xhr.responseText);
-            console.log('Upload result:', result);
             
             const imagePath = result.filePath || result.url || result.path;
             if (imagePath) {
               setEditUploadedImagePath(imagePath);
               setEditImageUploaded(true);
               setImageUploadProgress(100);
-              console.log('Image uploaded successfully:', imagePath);
             } else {
               throw new Error('No file path in upload response');
             }
@@ -271,6 +277,18 @@ export default function SchoolsClient({
   };
 
   const handleEditClick = (school: School) => {
+    if (!isClient || !user) {
+      setUnauthorizedType('not_logged_in');
+      setShowUnauthorizedPopup(true);
+      return;
+    }
+    
+    if (!school.created_by || Number(school.created_by) !== Number(user.id)) {
+      setUnauthorizedType('not_owner');
+      setShowUnauthorizedPopup(true);
+      return;
+    }
+    
     setEditingSchool(school);
     setEditFormData({
       name: school.name,
@@ -340,7 +358,6 @@ export default function SchoolsClient({
       
       if (editImageUploaded && editUploadedImagePath) {
         finalImagePath = editUploadedImagePath;
-        console.log('Using new uploaded image:', finalImagePath);
       } else if (editPreviewUrl && !editImageUploaded) {
         throw new Error('Please wait for image upload to complete');
       }
@@ -355,8 +372,6 @@ export default function SchoolsClient({
         image: finalImagePath
       };
       
-      console.log('Update payload:', updatePayload);
-      
       const response = await fetch(`/api/schools?id=${editingSchool.id}`, {
         method: 'PUT',
         headers: {
@@ -366,7 +381,7 @@ export default function SchoolsClient({
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string; message?: string };
         throw new Error(errorData.error || errorData.message || 'Failed to update school');
       }
       
@@ -391,6 +406,20 @@ export default function SchoolsClient({
   };
   
   const handleDeleteClick = (schoolId: number) => {
+    const school = schools.find(s => s.id === schoolId);
+    
+    if (!isClient || !user) {
+      setUnauthorizedType('not_logged_in');
+      setShowUnauthorizedPopup(true);
+      return;
+    }
+    
+    if (!school?.created_by || Number(school.created_by) !== Number(user.id)) {
+      setUnauthorizedType('not_owner');
+      setShowUnauthorizedPopup(true);
+      return;
+    }
+    
     setDeleteConfirmId(schoolId);
   };
 
@@ -405,7 +434,7 @@ export default function SchoolsClient({
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { message?: string };
         throw new Error(errorData.message || 'Failed to delete school');
       }
       
@@ -1088,6 +1117,56 @@ export default function SchoolsClient({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUnauthorizedPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <div className="flex items-center mb-4">
+              <svg className="w-6 h-6 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {unauthorizedType === 'not_logged_in' ? 'Login Required' : 'Unauthorized Access'}
+              </h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              {unauthorizedType === 'not_logged_in' 
+                ? 'Please login or signup first to manage schools.'
+                : 'You are not authorized to perform this action. You can only edit or delete schools that you created.'}
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowUnauthorizedPopup(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              {unauthorizedType === 'not_logged_in' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowUnauthorizedPopup(false);
+                      window.location.href = '/login';
+                    }}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUnauthorizedPopup(false);
+                      window.location.href = '/register';
+                    }}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                  >
+                    Sign Up
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

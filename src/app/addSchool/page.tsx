@@ -7,6 +7,8 @@ import * as yup from 'yup';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useAuth } from '@/contexts/AuthContext';
+
 
 const schema = yup.object().shape({
   name: yup.string()
@@ -69,7 +71,7 @@ async function addSchoolAction(prevState: unknown, formData: FormData) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json() as { message?: string };
       throw new Error(errorData.message || 'Failed to add school');
     }
 
@@ -95,8 +97,9 @@ async function addSchoolAction(prevState: unknown, formData: FormData) {
   }
 }
 
-export default function AddSchool() {
+function AddSchoolContent() {
   const router = useRouter();
+  const { user, loading } = useAuth();
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
@@ -162,6 +165,24 @@ export default function AddSchool() {
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login?redirect=/addSchool');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
   const handleImageChange = async (file: File): Promise<void> => {
     setImageError('');
     
@@ -194,7 +215,7 @@ export default function AddSchool() {
         throw new Error('Upload failed');
       }
 
-      const result = await response.json();
+      const result = await response.json() as { filePath: string };
       setUploadedImagePath(result.filePath);
       setImageUploaded(true);
     } catch (error) {
@@ -261,7 +282,7 @@ export default function AddSchool() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -734,4 +755,8 @@ export default function AddSchool() {
       </div>
     </div>
   );
+}
+
+export default function AddSchool() {
+  return <AddSchoolContent />;
 }

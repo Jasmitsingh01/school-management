@@ -2,6 +2,7 @@ import { executeQuery } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { School, SchoolResponse, SchoolsResponse } from '@/types';
+import { verifyAuth } from '@/lib/auth';
 
 interface SchoolData {
   name: string;
@@ -35,18 +36,34 @@ export async function GET(request: Request): Promise<NextResponse> {
         );
       }
       
-      const schools = await executeQuery({
-        query: `SELECT * FROM schools WHERE id = ${schoolId}`
-      }) as School[];
+      const schoolsRaw = await executeQuery({
+      query: `SELECT * FROM schools WHERE id = ?`,
+      values: [schoolId]
+    }) as Array<{
+      id: number;
+      name: string;
+      address: string;
+      city: string;
+      state: string;
+      contact: string;
+      email_id: string;
+      image: string;
+      created_by: number;
+    }>;
       
-      if (schools.length === 0) {
+      if (schoolsRaw.length === 0) {
         return NextResponse.json(
           { error: 'School not found' },
           { status: 404 }
         );
       }
       
-      const response: SchoolResponse = { school: schools[0] };
+      const school = {
+        ...schoolsRaw[0],
+        created_by: schoolsRaw[0].created_by !== null && schoolsRaw[0].created_by !== undefined ? Number(schoolsRaw[0].created_by) : undefined
+      };
+      
+      const response: SchoolResponse = { school };
       return NextResponse.json(response, { status: 200 });
     }
     
@@ -54,9 +71,25 @@ export async function GET(request: Request): Promise<NextResponse> {
     const limit = parseInt(url.searchParams.get('limit') || '10');
     const offset = (page - 1) * limit;
     
-    const schools = await executeQuery({
-      query: `SELECT id, name, address, city, state, contact, email_id, image FROM schools ORDER BY name ASC LIMIT ${limit} OFFSET ${offset}`
-    }) as School[];
+    const schoolsRaw = await executeQuery({
+      query: `SELECT id, name, address, city, state, contact, email_id, image, created_by FROM schools ORDER BY name ASC LIMIT ? OFFSET ?`,
+      values: [limit, offset]
+    }) as Array<{
+      id: number;
+      name: string;
+      address: string;
+      city: string;
+      state: string;
+      contact: string;
+      email_id: string;
+      image: string;
+      created_by: number;
+    }>;    
+    
+    const schools: School[] = schoolsRaw.map(school => ({
+      ...school,
+      created_by: school.created_by !== null && school.created_by !== undefined ? Number(school.created_by) : undefined
+    }));
     
     
     const totalCountResult = await executeQuery({
@@ -100,6 +133,15 @@ export async function GET(request: Request): Promise<NextResponse> {
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
+ 
+    const user = await verifyAuth();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     const data = await request.json() as SchoolData;
     const { name, address, city, state, contact, image, email_id } = data;
     
@@ -141,19 +183,12 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const safeName = sanitizeForSQL(name.trim());
-    const safeAddress = sanitizeForSQL(address.trim());
-    const safeCity = sanitizeForSQL(city.trim());
-    const safeState = sanitizeForSQL(state.trim());
-    const safeContact = contact.trim();
-    const safeImage = sanitizeForSQL(image.trim());
-    const safeEmail = sanitizeForSQL(email_id.trim());
-    
     const result = await executeQuery({
       query: `
-        INSERT INTO schools (name, address, city, state, contact, image, email_id)
-        VALUES ('${safeName}', '${safeAddress}', '${safeCity}', '${safeState}', '${safeContact}', '${safeImage}', '${safeEmail}')
-      `
+        INSERT INTO schools (name, address, city, state, contact, image, email_id, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      values: [name.trim(), address.trim(), city.trim(), state.trim(), contact.trim(), image.trim(), email_id.trim(), user.userId]
     }) as QueryResult;
     
     revalidatePath('/showSchools');
@@ -173,6 +208,14 @@ export async function POST(request: Request): Promise<NextResponse> {
 
 export async function PUT(request: Request): Promise<NextResponse> {
   try {
+    const user = await verifyAuth();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     
@@ -191,25 +234,35 @@ export async function PUT(request: Request): Promise<NextResponse> {
       );
     }
 
+    const schools = await executeQuery({
+      query: `SELECT created_by FROM schools WHERE id = ?`,
+      values: [schoolId] as (string | number)[]
+    }) as { created_by: number }[];
+
+    if (schools.length === 0) {
+      return NextResponse.json(
+        { error: 'School not found' },
+        { status: 404 }
+      );
+    }
+
+    if (schools[0].created_by !== user.userId) {
+      return NextResponse.json(
+        { error: 'You can only edit schools that you created' },
+        { status: 403 }
+      );
+    }
+
     const data = await request.json() as SchoolData;
     const { name, address, city, state, contact, image, email_id } = data;
-    
-    const safeName = sanitizeForSQL(name.trim());
-    const safeAddress = sanitizeForSQL(address.trim());
-    const safeCity = sanitizeForSQL(city.trim());
-    const safeState = sanitizeForSQL(state.trim());
-    const safeContact = contact.trim();
-    const safeImage = sanitizeForSQL(image.trim());
-    const safeEmail = sanitizeForSQL(email_id.trim());
     
     await executeQuery({
       query: `
         UPDATE schools 
-        SET name = '${safeName}', address = '${safeAddress}', city = '${safeCity}', 
-            state = '${safeState}', contact = '${safeContact}', image = '${safeImage}', 
-            email_id = '${safeEmail}'
-        WHERE id = ${schoolId}
-      `
+        SET name = ?, address = ?, city = ?, state = ?, contact = ?, image = ?, email_id = ?
+        WHERE id = ?
+      `,
+      values: [name.trim(), address.trim(), city.trim(), state.trim(), contact.trim(), image.trim(), email_id.trim(), schoolId]
     });
     
     revalidatePath('/showSchools');
@@ -229,6 +282,14 @@ export async function PUT(request: Request): Promise<NextResponse> {
 
 export async function DELETE(request: Request): Promise<NextResponse> {
   try {
+    const user = await verifyAuth();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     
@@ -246,9 +307,29 @@ export async function DELETE(request: Request): Promise<NextResponse> {
         { status: 400 }
       );
     }
+
+    const schools = await executeQuery({
+      query: `SELECT created_by FROM schools WHERE id = ?`,
+      values: [schoolId] as (string | number)[]
+    }) as { created_by: number }[];
+
+    if (schools.length === 0) {
+      return NextResponse.json(
+        { error: 'School not found' },
+        { status: 404 }
+      );
+    }
+
+    if (schools[0].created_by !== user.userId) {
+      return NextResponse.json(
+        { error: 'You can only delete schools that you created' },
+        { status: 403 }
+      );
+    }
     
     await executeQuery({
-      query: `DELETE FROM schools WHERE id = ${schoolId}`
+      query: `DELETE FROM schools WHERE id = ?`,
+      values: [schoolId] as (string | number)[]
     });
     
     revalidatePath('/showSchools');

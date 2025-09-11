@@ -1,4 +1,12 @@
 
+export interface User {
+  id: number;
+  userId: number;
+  name: string;
+  email: string;
+  email_verified: boolean;
+}
+
 export interface School {
   id: number;
   name: string;
@@ -8,6 +16,7 @@ export interface School {
   contact?: string;
   image: string;
   email_id?: string;
+  created_by?: number;
 }
 
 export interface ApiResponse<T> {
