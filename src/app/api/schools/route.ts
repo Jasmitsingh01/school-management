@@ -73,7 +73,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     
     const schoolsRaw = await executeQuery({
       query: `SELECT id, name, address, city, state, contact, email_id, image, created_by FROM schools ORDER BY name ASC LIMIT ? OFFSET ?`,
-      values: [limit, offset]
+      values: [limit.toString(), offset.toString()]
     }) as Array<{
       id: number;
       name: string;
